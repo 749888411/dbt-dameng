@@ -1,7 +1,5 @@
+#!/usr/bin/env python
 """
-Copyright (c) 2022, Oracle and/or its affiliates.
-Copyright (c) 2020, Vitor Avancini
-
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
@@ -19,21 +17,18 @@ Copyright (c) 2020, Vitor Avancini
 import sys
 from setuptools import setup, find_packages
 
-
 # lockstep with dbt-core==1.1 which requires Python > 3.7.2
 if sys.version_info < (3, 7, 2):
     print("Error: dbt-dameng does not support this version of Python.")
     print("Please upgrade to Python 3.7.2 or higher.")
     sys.exit(1)
 
-
 with open('README.md') as readme_file:
     readme = readme_file.read()
 
-
 requirements = [
-        "dbt-core==1.4.5",
-        "dmPython==2.4.5",
+    "dbt-core==1.4.5",
+    "dmPython==2.4.5",
 ]
 
 test_requirements = [
@@ -49,9 +44,11 @@ project_urls = {
     "Release Notes": "https://github.com/sqlking22/dbt-dameng/releases"
 }
 
+package_name = "dbt-dameng"
+package_version = "1.4.5"
+description = """The dameng adapter plugin for dbt (data build tool)"""
 url = 'https://github.com/sqlking22/dbt-dameng'
 
-VERSION = '0.0.1'
 setup(
     author="sqlking22",
     python_requires='>=3.7.2',
@@ -67,21 +64,19 @@ setup(
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11'
     ],
-    description="dbt (data build tool) adapter for the Dameng database",
+    description=description,
     install_requires=requirements,
     license="Apache Software License 2.0",
     long_description=readme,
     long_description_content_type='text/markdown',
     include_package_data=True,
-    keywords='Dameng dbt',
-    name='dbt-dameng',
+    name=package_name,
     packages=find_packages(),
     test_suite='tests',
     tests_require=test_requirements,
-    scripts=['bin/create-pem-from-p12'],
     url=url,
     project_urls=project_urls,
-    version=VERSION,
+    version=package_version,
     zip_safe=False,
     package_data={
         'dbt': [

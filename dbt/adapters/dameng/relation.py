@@ -1,7 +1,4 @@
 """
-Copyright (c) 2023, Dameng and/or its affiliates.
-Copyright (c) 2022, Oracle and/or its affiliates.
-Copyright (c) 2020, Vitor Avancini
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,12 +19,14 @@ from dbt.adapters.base.relation import BaseRelation, Policy
 
 @dataclass
 class DamengQuotePolicy(Policy):
+    database: bool = False
     schema: bool = False
     identifier: bool = False
 
 
 @dataclass
 class DamengIncludePolicy(Policy):
+    database: bool = False
     schema: bool = True
     identifier: bool = True
 

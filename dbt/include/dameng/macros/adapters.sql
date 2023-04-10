@@ -4,13 +4,7 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
 */
 
 {% macro dameng__alter_column_type(relation,column_name,new_column_type) -%}
-  {#
-    Changes column name or data type
-    1. Create a new column (w/ temp name and correct type)
-    2. Copy data over to it
-    3. Drop the existing column (cascade!)
-    4. Rename the new column to existing column
-  #}
+
   {%- set tmp_column = column_name + "__dbt_alter" -%}
 
   {% call statement('alter_column_type 1', fetch_result=False) %}
@@ -32,7 +26,11 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
     {{ adapter.verify_database(information_schema.database) }}
   {%- endif -%}
   {% call statement('check_schema_exists', fetch_result=True, auto_begin=False) %}
-    select count(*) from sys.all_users where username = upper('{{ schema }}')
+   SELECT count(*) FROM SYSOBJECTS A,DBA_USERS B
+                       WHERE A.PID=B.USER_ID
+                         AND A.TYPE$='SCH'
+                         and A.NAME= upper('{{ information_schema.database }}'
+                       ORDER BY B.USERNAME
   {% endcall %}
   {{ return(load_result('check_schema_exists').table) }}
 {% endmacro %}
@@ -43,14 +41,60 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
    {{ adapter.verify_database(relation.database) }}
  {%- endif -%}
  {%- call statement('create_schema') -%}
-     create schema {{ relation.without_identifier().include(database=False) }}
+     create schema {{ relation.database }}
  {%- endcall -%}
 {% endmacro %}
 
 
-{% macro dameng__drop_schema(relation) -%}
+{% macro dameng__drop_schema(schema) -%}
+  {% if schema.database -%}
+    {{ adapter.verify_database(schema.database) }}
+  {%- endif -%}
   {%- call statement('drop_schema') -%}
-    drop schema if exists {{ relation.without_identifier().include(database=False) }} cascade
+    -- from https://gist.github.com/rafaeleyng/33eaef673fc4ee98a6de4f70c8ce3657
+    BEGIN
+    FOR cur_rec IN (SELECT object_name, object_type
+                      FROM ALL_objects
+                      WHERE object_type IN
+                              ('TABLE',
+                                'VIEW',
+                                'PACKAGE',
+                                'PROCEDURE',
+                                'FUNCTION',
+                                'SEQUENCE',
+                                'TYPE',
+                                'SYNONYM',
+                                'MATERIALIZED VIEW'
+                              )
+                      AND upper(owner) = '{{ schema | upper }}')
+    LOOP
+        BEGIN
+          IF cur_rec.object_type = 'TABLE'
+          THEN
+              EXECUTE IMMEDIATE    'DROP '
+                                || cur_rec.object_type
+                                || ' "'
+                                || cur_rec.object_name
+                                || '" CASCADE CONSTRAINTS';
+          ELSE
+              EXECUTE IMMEDIATE    'DROP '
+                                || cur_rec.object_type
+                                || ' "'
+                                || cur_rec.object_name
+                                || '"';
+          END IF;
+        EXCEPTION
+          WHEN OTHERS
+          THEN
+              DBMS_OUTPUT.put_line (   'FAILED: DROP '
+                                    || cur_rec.object_type
+                                    || ' "'
+                                    || cur_rec.object_name
+                                    || '"'
+                                  );
+        END;
+    END LOOP;
+  END;
   {%- endcall -%}
 {% endmacro %}
 
@@ -75,6 +119,47 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
   {%- endcall %}
 {% endmacro %}
 
+{% macro dameng__create_table_as_backup(temporary, relation, sql) -%}
+  {%- set sql_header = config.get('sql_header', none) -%}
+
+  {{ sql_header if sql_header is not none }}
+  create or replace {% if temporary -%}
+    global temporary
+  {%- endif %} table {{ relation.include(schema=(not temporary)) }}
+  {% if temporary -%} on commit preserve rows {%- endif %}
+  as
+    {{ sql }}
+{%- endmacro %}
+
+
+{% macro dameng__create_table_as(temporary, relation, sql) -%}
+  {%- set sql_header = config.get('sql_header', none) -%}
+  {%- set parallel = config.get('parallel', none) -%}
+  {%- set compression_clause = config.get('table_compression_clause', none) -%}
+
+  {{ sql_header if sql_header is not none }}
+
+  create {% if temporary -%}
+    global temporary
+  {%- endif %} table {{ relation.include(schema=(not temporary)) }}
+  {% if temporary -%} on commit preserve rows {%- endif %}
+  {% if not temporary -%}
+    {% if parallel %} parallel {{ parallel }}{% endif %}
+    {% if compression_clause %} {{ compression_clause }} {% endif %}
+  {%- endif %}
+  as
+    {{ sql }}
+
+{%- endmacro %}
+
+{% macro dameng__create_view_as(relation, sql) -%}
+  {%- set sql_header = config.get('sql_header', none) -%}
+
+  {{ sql_header if sql_header is not none }}
+  create view {{ relation }} as
+    {{ sql }}
+
+{% endmacro %}
 
 {% macro dameng__get_columns_in_relation(relation) -%}
 {% call statement('get_columns_in_relation', fetch_result=True) %}
@@ -176,9 +261,11 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
 
 {% macro dameng__list_schemas(database) -%}
   {% call statement('list_schemas', fetch_result=True, auto_begin=False) -%}
-     	select username as "name"
-      from sys.all_users
-      order by username
+      SELECT A.NAME as "name"
+      FROM SYSOBJECTS A,DBA_USERS B
+      WHERE A.PID=B.USER_ID
+        AND A.TYPE$='SCH'
+      ORDER BY B.USERNAME
   {% endcall %}
   {{ return(load_result('list_schemas').table) }}
 {% endmacro %}

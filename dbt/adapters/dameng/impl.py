@@ -1,8 +1,4 @@
 """
-Copyright (c) 2023, Dameng and/or its affiliates.
-Copyright (c) 2022, Oracle and/or its affiliates.
-Copyright (c) 2020, Vitor Avancini
-
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
@@ -22,6 +18,14 @@ from itertools import chain
 
 import agate
 import dbt.exceptions
+from dbt.exceptions import (
+    CrossDbReferenceProhibitedError,
+    IndexConfigNotDictError,
+    IndexConfigError,
+    DbtRuntimeError,
+    UnexpectedDbReferenceError,
+)
+from dbt.adapters.dameng.keyword_catalog import KEYWORDS
 from dbt.adapters.base.relation import BaseRelation, InformationSchema
 from dbt.adapters.base.impl import GET_CATALOG_MACRO_NAME
 from dbt.adapters.sql import SQLAdapter
@@ -35,13 +39,10 @@ from dbt.events import AdapterLogger
 from dbt.exceptions import raise_compiler_error
 from dbt.utils import filter_null_values
 
-from dbt.adapters.dameng.keyword_catalog import KEYWORDS
 
 logger = AdapterLogger("dameng")
 
-# Added 6 random hex letters (56c36b) to table_a and table_b to avoid ORA-32031.
-# Some dbt test cases use relation names table_a and table_b
-# Oracle error: ORA-32031: illegal reference of a query name in WITH clause
+
 COLUMNS_EQUAL_SQL = '''
 with diff_count as (
     SELECT
@@ -211,6 +212,14 @@ class DamengAdapter(SQLAdapter):
         results = self._catalog_filter_table(table, manifest)
         return results
 
+    def _get_catalog_schemas(self, manifest):
+        # postgres only allow one database (the main one)
+        schemas = super()._get_catalog_schemas(manifest)
+        try:
+            return schemas.flatten()
+        except DbtRuntimeError as exc:
+            raise CrossDbReferenceProhibitedError(self.type(), exc.msg)
+
     def list_relations_without_caching(
             self, schema_relation: BaseRelation,
     ) -> List[BaseRelation]:
@@ -318,33 +327,33 @@ class DamengAdapter(SQLAdapter):
     def valid_incremental_strategies(self):
         return ["append", "merge"]
 
-    def standardize_grants_dict(self, grants_table: agate.Table) -> dict:
-        """Translate the result of `show grants` (or equivalent) to match the
-        grants which a user would configure in their project.
-        Ideally, the SQL to show grants should also be filtering:
-        filter OUT any grants TO the current user/role (e.g. OWNERSHIP).
-        If that's not possible in SQL, it can be done in this method instead.
-        :param grants_table: An agate table containing the query result of
-            the SQL returned by get_show_grant_sql
-        :return: A standardized dictionary matching the `grants` config
-        :rtype: dict
-        """
-        unsupported_privileges = ["INDEX", "READ", "WRITE"]
-
-        grants_dict: Dict[str, List[str]] = {}
-        for row in grants_table:
-            grantee = row["grantor"]
-            privilege = row["privilege"]
-
-            # skip unsupported privileges
-            if privilege in unsupported_privileges:
-                continue
-
-            if privilege in grants_dict.keys():
-                grants_dict[privilege].append(grantee)
-            else:
-                grants_dict.update({privilege: [grantee]})
-        return grants_dict
+    # def standardize_grants_dict(self, grants_table: agate.Table) -> dict:
+    #     """Translate the result of `show grants` (or equivalent) to match the
+    #     grants which a user would configure in their project.
+    #     Ideally, the SQL to show grants should also be filtering:
+    #     filter OUT any grants TO the current user/role (e.g. OWNERSHIP).
+    #     If that's not possible in SQL, it can be done in this method instead.
+    #     :param grants_table: An agate table containing the query result of
+    #         the SQL returned by get_show_grant_sql
+    #     :return: A standardized dictionary matching the `grants` config
+    #     :rtype: dict
+    #     """
+    #     unsupported_privileges = ["INDEX", "READ", "WRITE"]
+    #
+    #     grants_dict: Dict[str, List[str]] = {}
+    #     for row in grants_table:
+    #         grantee = row["grantor"]
+    #         privilege = row["privilege"]
+    #
+    #         # skip unsupported privileges
+    #         if privilege in unsupported_privileges:
+    #             continue
+    #
+    #         if privilege in grants_dict.keys():
+    #             grants_dict[privilege].append(grantee)
+    #         else:
+    #             grants_dict.update({privilege: [grantee]})
+    #     return grants_dict
 
     # def list_schemas(self):
     #     # connection = self.acquire_connection(database)
@@ -360,50 +369,50 @@ class DamengAdapter(SQLAdapter):
     #         schemas.append(row[0])
     #     return schemas
 
-    def create_schema(self, database, if_not_exists=False):
-        # connection = self.acquire_connection(schema)
-        # cursor = connection.cursor()
-        database = str(database).split(".")[0]
-        query = f"CREATE SCHEMA {'IF NOT EXISTS ' if if_not_exists else ''}{database}"
-        # cursor.execute(query)
-        self.execute(query)
+    # def create_schema(self, database, if_not_exists=False):
+    #     # connection = self.acquire_connection(schema)
+    #     # cursor = connection.cursor()
+    #     database = str(database).split(".")[0]
+    #     query = f"CREATE SCHEMA {'IF NOT EXISTS ' if if_not_exists else ''}{database}"
+    #     # cursor.execute(query)
+    #     self.execute(query)
 
-    def list_relations(self, schema):
-        connection = self.acquire_connection(schema)
-        cursor = connection.cursor()
-        cursor.execute("SHOW TABLES")
-        results = cursor.fetchall()
-        relations = []
-        for row in results:
-            relations.append({
-                'schema': schema,
-                'name': row[0],
-                'type': 'table'
-            })
-        return relations
+    # def list_relations(self, schema):
+    #     connection = self.acquire_connection(schema)
+    #     cursor = connection.cursor()
+    #     cursor.execute("SHOW TABLES")
+    #     results = cursor.fetchall()
+    #     relations = []
+    #     for row in results:
+    #         relations.append({
+    #             'schema': schema,
+    #             'name': row[0],
+    #             'type': 'table'
+    #         })
+    #     return relations
 
-    def get_columns_in_relation(self, relation):
-        connection = self.acquire_connection(relation.get('schema'))
-        cursor = connection.cursor()
-        cursor.execute(f"DESCRIBE {relation.get('name')};")
-        results = cursor.fetchall()
-        columns = []
-        for row in results:
-            columns.append(DamengColumn(
-                name=row[0],
-                data_type=row[1],
-                table_name=relation.get('name'),
-                table_schema=relation.get('schema')
-            ))
-        return columns
+    # def get_columns_in_relation(self, relation):
+    #     connection = self.acquire_connection(relation.get('schema'))
+    #     cursor = connection.cursor()
+    #     cursor.execute(f"DESCRIBE {relation.get('name')};")
+    #     results = cursor.fetchall()
+    #     columns = []
+    #     for row in results:
+    #         columns.append(DamengColumn(
+    #             name=row[0],
+    #             data_type=row[1],
+    #             table_name=relation.get('name'),
+    #             table_schema=relation.get('schema')
+    #         ))
+    #     return columns
 
-    def get_rows(self, schema, identifier):
-        connection = self.acquire_connection(schema)
-        cursor = connection.cursor()
-        cursor.execute(f"SELECT * FROM {identifier};")
-        results = cursor.fetchall()
-        column_names = [desc[0] for desc in cursor.description]
-        rows = []
-        for row in results:
-            rows.append({column_names[i]: row[i] for i in range(len(column_names))})
-        return rows
+    # def get_rows(self, schema, identifier):
+    #     connection = self.acquire_connection(schema)
+    #     cursor = connection.cursor()
+    #     cursor.execute(f"SELECT * FROM {identifier};")
+    #     results = cursor.fetchall()
+    #     column_names = [desc[0] for desc in cursor.description]
+    #     rows = []
+    #     for row in results:
+    #         rows.append({column_names[i]: row[i] for i in range(len(column_names))})
+    #     return rows

@@ -1,8 +1,4 @@
 """
-Copyright (c) 2023, Dameng and/or its affiliates.
-Copyright (c) 2022, Oracle and/or its affiliates.
-Copyright (c) 2020, Vitor Avancini
-
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
@@ -15,21 +11,16 @@ Copyright (c) 2020, Vitor Avancini
   See the License for the specific language governing permissions and
   limitations under the License.
 """
-from typing import List, Optional, Tuple, Any, Dict, Union
+from typing import Tuple, Optional, Any
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-import enum
-import time
-import uuid
+from dataclasses import dataclass
 import dmPython
-
 import dbt.exceptions
 from dbt.adapters.base import Credentials
 from dbt.adapters.sql import SQLConnectionManager
 from dbt.contracts.connection import AdapterResponse
 from dbt.events import AdapterLogger
-
-from dbt.version import __version__ as dbt_version
+import time
 
 logger = AdapterLogger("dameng")
 
@@ -71,8 +62,12 @@ class DamengAdapterCredentials(Credentials):
         """
         List of keys to display in the `dbt debug` output. Omit password.
         """
-        return ('host', 'port'
-                , 'user', 'schema', 'database')
+        return ('host',
+                'port',
+                'user',
+                'database',
+                'schema'
+                )
 
 
 class DamengAdapterConnectionManager(SQLConnectionManager):
@@ -90,14 +85,11 @@ class DamengAdapterConnectionManager(SQLConnectionManager):
             'password': credentials.password,
             'host': credentials.host,
             'port': credentials.port,
-            'autoCommit': True
+            'schema': credentials.database
         }
 
         try:
             handle = dmPython.connect(**conn_config)
-            if credentials.database:
-                cursor = handle.cursor()
-                cursor.execute("set schema {}".format(credentials.database))
             connection.handle = handle
             connection.state = 'open'
         except dmPython.Error as e:
@@ -120,28 +112,30 @@ class DamengAdapterConnectionManager(SQLConnectionManager):
         This method must be implemented carefully,
         as the affected connection will likely be in use in a different thread.
         """
-        connection_name = connection.name
-        dameng_connection = connection.handle
-
-        logger.info("Cancelling query '{}' ".format(connection_name))
+        connection = connection.handle
 
         try:
-            dmPython.Connection.close(dameng_connection)
+            dmPython.Connection.close(connection)
+            logger.info("Canceled dameng connection !")
         except Exception as e:
             logger.error('Error closing connection for cancel request')
             raise Exception(str(e))
 
-        logger.info("Canceled query '{}'".format(connection_name))
-
     @classmethod
     def get_status(cls, cursor):
-        return 'OK'
+        """
+        返回最近一次执行的 sql 语句，
+        :param cursor:
+        :return:
+        """
+        # return cursor.statement
+        return 'ok'
 
     @classmethod
     def get_response(cls, cursor) -> AdapterResponse:
         # number of rows fetched for a SELECT statement or
         # have been affected by INSERT, UPDATE, DELETE and MERGE statements
-        code = cursor.statement or "OK"
+        code = cursor.statement
         rows = cursor.rowcount
         status_message = f"{code} {rows}"
         return AdapterResponse(_message=status_message, code=code, rows_affected=rows)
@@ -151,18 +145,18 @@ class DamengAdapterConnectionManager(SQLConnectionManager):
         try:
             yield
         except dmPython.DatabaseError as e:
-            logger.info('Dameng error: {}'.format(str(e)))
-
+            logger.debug('Dameng error: {}'.format(str(e)))
             try:
                 # attempt to release the connection
                 self.release()
             except dmPython.DatabaseError:
-                logger.info("Failed to release connection!")
+                logger.debug("Failed to release connection!")
                 pass
             raise dbt.exceptions.DbtDatabaseError(str(e).strip()) from e
 
         except Exception as e:
-            logger.info("Rolling back transaction.")
+            logger.debug("Error running SQL: {}", sql)
+            logger.debug("Rolling back transaction.")
             self.release()
             if isinstance(e, dbt.exceptions.DbtRuntimeError):
                 # during a sql query, an internal to dbt exception was raised.
@@ -179,31 +173,37 @@ class DamengAdapterConnectionManager(SQLConnectionManager):
     def add_query(
             self,
             sql: str,
-            auto_begin: bool = True,
+            # auto_begin: bool = True,
+            auto_begin: bool = False,
             bindings: Optional[Any] = {},
             abridge_sql_log: bool = False
     ) -> Tuple[dmPython.Connection, Any]:
         connection = self.get_thread_connection()
         if auto_begin and connection.transaction_open is False:
             self.begin()
-
-        logger.debug('Using {} connection "{}".'
-                     .format(self.TYPE, connection.name))
+        # logger.debug('Using {} connection "{}".'.format(self.TYPE, connection.name))
+        # logger.debug('add_query sql ->{}'.format(sql))
 
         with self.exception_handler(sql):
-            if abridge_sql_log:
-                log_sql = '{}...'.format(sql[:512])
-            else:
-                log_sql = sql
+            # if abridge_sql_log:
+            #     log_sql = '{}...'.format(sql[:512])
+            # else:
+            #     log_sql = sql
 
-            logger.debug(f'On {connection.name}: f{log_sql}')
-            pre = time.time()
+            # logger.debug('log_sql: {}'.format(log_sql))
+
+            # pre = time.time()
             cursor = connection.handle.cursor()
-            cursor.execute(sql, bindings)
-            logger.debug(f"SQL status: {self.get_status(cursor)} in {(time.time() - pre)} seconds")
+            try:
+                logger.debug('add_query sql-->[{0}],bindings-->[{1}]'.format(sql, bindings))
+                if 'BEGIN' not in sql:
+                    cursor.execute(sql, bindings)
+            except Exception as ex:
+                logger.error(ex)
+            # logger.debug(f"execute {self.get_status(cursor)} SQL cost {(time.time() - pre)} seconds")
             return connection, cursor
 
-    def add_begin_query(self):
-        connection = self.get_thread_connection()
-        cursor = connection.handle.cursor
-        return connection, cursor
+    # def add_begin_query(self):
+    #     connection = self.get_thread_connection()
+    #     cursor = connection.handle.cursor
+    #     return connection, cursor

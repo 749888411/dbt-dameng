@@ -21,3 +21,8 @@ def dbt_profile_target():
         'database': 'TEST',
         'port': 5236
     }
+
+
+@pytest.fixture(scope="class")
+def unique_schema(request, prefix) -> str:
+    return 'TEST'
