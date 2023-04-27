@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -173,8 +175,7 @@ class DamengAdapterConnectionManager(SQLConnectionManager):
     def add_query(
             self,
             sql: str,
-            # auto_begin: bool = True,
-            auto_begin: bool = False,
+            auto_begin: bool = True,
             bindings: Optional[Any] = {},
             abridge_sql_log: bool = False
     ) -> Tuple[dmPython.Connection, Any]:
@@ -185,25 +186,27 @@ class DamengAdapterConnectionManager(SQLConnectionManager):
         # logger.debug('add_query sql ->{}'.format(sql))
 
         with self.exception_handler(sql):
-            # if abridge_sql_log:
-            #     log_sql = '{}...'.format(sql[:512])
-            # else:
-            #     log_sql = sql
+            if abridge_sql_log:
+                log_sql = '{}...'.format(sql[:512])
+            else:
+                log_sql = sql
 
             # logger.debug('log_sql: {}'.format(log_sql))
 
             # pre = time.time()
             cursor = connection.handle.cursor()
             try:
-                logger.debug('add_query sql-->[{0}],bindings-->[{1}]'.format(sql, bindings))
-                if 'BEGIN' not in sql:
+                logger.debug('execute query sql-->[{0}]'.format(sql))
+                if 'BEGIN' in sql and len(sql) == 5:
+                    print(sql)
+                else:
                     cursor.execute(sql, bindings)
             except Exception as ex:
                 logger.error(ex)
             # logger.debug(f"execute {self.get_status(cursor)} SQL cost {(time.time() - pre)} seconds")
             return connection, cursor
 
-    # def add_begin_query(self):
-    #     connection = self.get_thread_connection()
-    #     cursor = connection.handle.cursor
-    #     return connection, cursor
+    def add_begin_query(self):
+        connection = self.get_thread_connection()
+        cursor = connection.handle.cursor
+        return connection, cursor

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -18,9 +19,9 @@ import sys
 from setuptools import setup, find_packages
 
 # lockstep with dbt-core==1.1 which requires Python > 3.7.2
-if sys.version_info < (3, 7, 2):
+if sys.version_info < (3, 7, 0):
     print("Error: dbt-dameng does not support this version of Python.")
-    print("Please upgrade to Python 3.7.2 or higher.")
+    print("Please upgrade to Python 3.7.1 or higher.")
     sys.exit(1)
 
 with open('README.md') as readme_file:
@@ -51,7 +52,7 @@ url = 'https://github.com/sqlking22/dbt-dameng'
 
 setup(
     author="sqlking22",
-    python_requires='>=3.7.2',
+    python_requires='>=3.7.1',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import dmPython
 
@@ -15,8 +15,8 @@ class DMOBJ:
         try:
             dm_conn = dmPython.connect(user=self.dm_user, password=self.dm_password, server=self.dm_host,
                                        port=self.dm_port)
-            dm_cursor = dm_conn.cursor()
-            dm_cursor.execute("set schema %s" % dbname)
+            # dm_cursor = dm_conn.cursor()
+            # dm_cursor.execute("set schema %s" % dbname)
             return dm_conn
         except (dmPython.Error, Exception) as err:
             print("could not connect to DM8 server", err)

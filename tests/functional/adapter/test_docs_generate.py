@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import pytest
 
 from dbt.tests.adapter.basic.test_docs_generate import (models__schema_yml,

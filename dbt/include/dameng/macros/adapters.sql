@@ -101,21 +101,7 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
 
 {% macro dameng__drop_relation(relation) -%}
   {% call statement('drop_relation', auto_begin=False) -%}
-   DECLARE
-     dne_942    EXCEPTION;
-     PRAGMA EXCEPTION_INIT(dne_942, -942);
-     attempted_ddl_on_in_use_GTT EXCEPTION;
-     pragma EXCEPTION_INIT(attempted_ddl_on_in_use_GTT, -14452);
-  BEGIN
-     SAVEPOINT start_transaction;
-     EXECUTE IMMEDIATE 'DROP {{ relation.type }} {{ relation }} cascade constraint';
-     COMMIT;
-  EXCEPTION
-     WHEN attempted_ddl_on_in_use_GTT THEN
-        NULL; -- if it its a global temporary table, leave it alone.
-     WHEN dne_942 THEN
-        NULL;
-  END;
+  DROP {{ relation.type }} {{ relation }} cascade
   {%- endcall %}
 {% endmacro %}
 
@@ -123,7 +109,7 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
   {%- set sql_header = config.get('sql_header', none) -%}
 
   {{ sql_header if sql_header is not none }}
-  create or replace {% if temporary -%}
+  create {% if temporary -%}
     global temporary
   {%- endif %} table {{ relation.include(schema=(not temporary)) }}
   {% if temporary -%} on commit preserve rows {%- endif %}
